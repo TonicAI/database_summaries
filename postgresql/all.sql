@@ -46,7 +46,7 @@ SELECT schema,
             END
     ) AS "avg_row_size",
     num_columns,
-    num_foreign_keys -- NEW COLUMN
+    num_foreign_keys
 FROM (
         SELECT *,
             total_bytes - index_bytes - COALESCE(toast_bytes, 0) AS table_bytes
