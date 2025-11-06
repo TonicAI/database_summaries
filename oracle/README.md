@@ -19,4 +19,7 @@ This SQL query calculates the total storage size (in gigabytes) used by tables a
 - The query may require DBA privileges to access the `DBA_SEGMENTS` and `DBA_LOBS` views.
 - For finer granularity, consider modifying the query to show storage at the table level rather than the schema level.
 
+## summary.sql
+Generates a report of all schemas, including max table size, total columns.
+
 
