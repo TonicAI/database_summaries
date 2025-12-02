@@ -44,33 +44,49 @@ SELECT schema,
                 WHEN row_estimate = 0 THEN '-'
                 ELSE pg_size_pretty(ceil(total_bytes / row_estimate)::bigint)
             END
-    ) AS "avg_row_size"
+    ) AS "avg_row_size",
+    num_columns,
+    num_foreign_keys
 FROM (
         SELECT *,
             total_bytes - index_bytes - COALESCE(toast_bytes, 0) AS table_bytes
         FROM (
-                SELECT c.oid,
-                    nspname AS schema,
-                    relname AS name,
-                    relkind AS kind,
-                    SUM(c.reltuples) OVER (PARTITION BY parent) AS row_estimate,
-                    SUM(pg_total_relation_size(c.oid)) OVER (PARTITION BY parent) AS total_bytes,
-                    SUM(pg_indexes_size(c.oid)) OVER (PARTITION BY parent) AS index_bytes,
-                    SUM(pg_total_relation_size(reltoastrelid)) OVER (PARTITION BY parent) AS toast_bytes,
-                    parent
-                FROM (
-                        SELECT pg_class.oid,
-                            reltuples,
-                            relname,
-                            relnamespace,
-                            relkind,
-                            pg_class.reltoastrelid,
-                            COALESCE(inhparent, pg_class.oid) parent
-                        FROM pg_class
-                            LEFT JOIN pg_inherit_short ON inhrelid = oid
-                    ) c
-                    LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
-            ) a
+            SELECT c.oid,
+                nspname AS schema,
+                relname AS name,
+                relkind AS kind,
+                SUM(c.reltuples) OVER (PARTITION BY parent) AS row_estimate,
+                SUM(pg_total_relation_size(c.oid)) OVER (PARTITION BY parent) AS total_bytes,
+                SUM(pg_indexes_size(c.oid)) OVER (PARTITION BY parent) AS index_bytes,
+                SUM(pg_total_relation_size(reltoastrelid)) OVER (PARTITION BY parent) AS toast_bytes,
+                parent,
+                (
+                    SELECT count(attname)
+                    FROM pg_attribute pa
+                    WHERE pa.attrelid = c.parent
+                        AND attnum > 0
+                        AND NOT attisdropped
+                ) AS num_columns,
+                -- Correlated subquery to count foreign keys (contype='f') defined on the parent table
+                (
+                    SELECT count(*)
+                    FROM pg_constraint pc
+                    WHERE pc.contype = 'f'
+                        AND pc.conrelid = c.parent
+                ) AS num_foreign_keys
+            FROM (
+                SELECT pg_class.oid,
+                    reltuples,
+                    relname,
+                    relnamespace,
+                    relkind,
+                    pg_class.reltoastrelid,
+                    COALESCE(inhparent, pg_class.oid) parent
+                FROM pg_class
+                    LEFT JOIN pg_inherit_short ON inhrelid = oid
+            ) c
+                LEFT JOIN pg_namespace n ON n.oid = c.relnamespace
+        ) a
         WHERE oid = parent
             AND schema NOT IN ('information_schema', 'repack', 'aiven_extras')
             AND schema NOT LIKE 'aws_%'
